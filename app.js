@@ -26,6 +26,9 @@
   /** Gain de salida del suspenso; se atenúa de golpe al festejo para no solaparse */
   let suspenseOutGain = null;
 
+  const barkSfx = new Audio("audio/bark.mp3");
+  barkSfx.preload = "auto";
+
   function getAudioContext() {
     if (audioCtxSingleton) return audioCtxSingleton;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -140,84 +143,15 @@
 
   function playCelebration() {
     if (prefersReducedMotion) return;
-    const ctx = getAudioContext();
-    if (!ctx) return;
-
     duckSuspenseForCelebration();
-
-    const now = ctx.currentTime;
-    const master = ctx.createGain();
-    master.connect(ctx.destination);
-
-    const holdUntil = now + 1.32;
-    master.gain.setValueAtTime(0.22, now);
-    master.gain.setValueAtTime(0.22, holdUntil);
-    master.gain.linearRampToValueAtTime(0, holdUntil + 0.28);
-
-    window.setTimeout(() => {
-      try {
-        master.disconnect();
-      } catch (e) {
-        /* ignore */
-      }
-    }, 1800);
-
-    const notes = [
-      { f: 523.25, t: 0 },
-      { f: 659.25, t: 0.08 },
-      { f: 783.99, t: 0.16 },
-      { f: 1046.5, t: 0.24 },
-      { f: 1318.51, t: 0.36 },
-      { f: 1567.98, t: 0.48 },
-    ];
-
-    notes.forEach(({ f, t }) => {
-      const o = ctx.createOscillator();
-      o.type = "sine";
-      o.frequency.setValueAtTime(f, now + t);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.001, now + t);
-      g.gain.exponentialRampToValueAtTime(0.18, now + t + 0.02);
-      g.gain.linearRampToValueAtTime(0, now + t + 0.32);
-      o.connect(g).connect(master);
-      o.start(now + t);
-      o.stop(now + t + 0.34);
-    });
-
-    const chordT = now + 0.52;
-    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
-      const o = ctx.createOscillator();
-      o.type = "sine";
-      o.frequency.setValueAtTime(f, chordT + i * 0.015);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, chordT);
-      g.gain.linearRampToValueAtTime(0.1, chordT + 0.04);
-      g.gain.linearRampToValueAtTime(0, chordT + 0.72);
-      o.connect(g).connect(master);
-      o.start(chordT);
-      o.stop(chordT + 0.74);
-    });
-
-    const noise = ctx.createBufferSource();
-    const noiseBuf = ctx.createBuffer(
-      1,
-      Math.ceil(ctx.sampleRate * 0.06),
-      ctx.sampleRate
-    );
-    const ch = noiseBuf.getChannelData(0);
-    for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
-    noise.buffer = noiseBuf;
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.setValueAtTime(2200, now);
-    bp.Q.setValueAtTime(0.35, now);
-    const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0, now + 0.48);
-    ng.gain.linearRampToValueAtTime(0.045, now + 0.5);
-    ng.gain.linearRampToValueAtTime(0, now + 0.58);
-    noise.connect(bp).connect(ng).connect(master);
-    noise.start(now + 0.48);
-    noise.stop(now + 0.59);
+    try {
+      barkSfx.pause();
+      barkSfx.currentTime = 0;
+    } catch (e) {
+      /* ignore */
+    }
+    barkSfx.volume = 0.92;
+    void barkSfx.play().catch(() => {});
   }
 
   async function tryStartSuspense() {
