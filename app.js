@@ -2,7 +2,7 @@
   "use strict";
 
   const HOOK =
-    "Si mi mama fuese una pesha y mi papa fuese un pesho...";
+    "Si mi mamá fuese una pesha y mi papá fuese un pesho...";
   const TITLE = "un lindo peeeeshito";
 
   const nebulaCanvas = document.getElementById("nebula");
