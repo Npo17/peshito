@@ -19,6 +19,187 @@
     "(prefers-reduced-motion: reduce)"
   ).matches;
 
+  /* ---------- Audio: suspenso al entrar, festejo al botón ---------- */
+  let audioCtxSingleton = null;
+  let suspenseStarted = false;
+  let suspenseFallbackHandler = null;
+
+  function getAudioContext() {
+    if (audioCtxSingleton) return audioCtxSingleton;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtxSingleton = new AC();
+    return audioCtxSingleton;
+  }
+
+  async function resumeAudioContext() {
+    const ctx = getAudioContext();
+    if (!ctx) return false;
+    if (ctx.state === "suspended") await ctx.resume();
+    return ctx.state === "running";
+  }
+
+  function isRevealButtonTarget(el) {
+    return Boolean(
+      el && (el === cta || el.closest?.("#cta") === cta)
+    );
+  }
+
+  function detachSuspenseFallback() {
+    if (suspenseFallbackHandler) {
+      document.removeEventListener(
+        "pointerdown",
+        suspenseFallbackHandler,
+        true
+      );
+      suspenseFallbackHandler = null;
+    }
+  }
+
+  function playSuspense() {
+    if (prefersReducedMotion || suspenseStarted) return;
+    suspenseStarted = true;
+    const ctx = getAudioContext();
+    if (!ctx) {
+      suspenseStarted = false;
+      return;
+    }
+    detachSuspenseFallback();
+
+    const now = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.001, now);
+    master.gain.exponentialRampToValueAtTime(0.22, now + 2.8);
+    master.gain.linearRampToValueAtTime(0.18, now + 9);
+    master.gain.exponentialRampToValueAtTime(0.001, now + 15.5);
+    master.connect(ctx.destination);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(90, now);
+    filter.frequency.exponentialRampToValueAtTime(520, now + 9);
+    filter.Q.setValueAtTime(0.6, now);
+    filter.connect(master);
+
+    const osc1 = ctx.createOscillator();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(52, now);
+    osc1.frequency.exponentialRampToValueAtTime(78, now + 12);
+    const g1 = ctx.createGain();
+    g1.gain.setValueAtTime(0.9, now);
+    osc1.connect(g1).connect(filter);
+
+    const osc2 = ctx.createOscillator();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(55.3, now);
+    osc2.frequency.exponentialRampToValueAtTime(80, now + 12);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.85, now);
+    osc2.connect(g2).connect(filter);
+
+    const osc3 = ctx.createOscillator();
+    osc3.type = "triangle";
+    osc3.frequency.setValueAtTime(78, now);
+    osc3.frequency.exponentialRampToValueAtTime(104, now + 11);
+    const g3 = ctx.createGain();
+    g3.gain.setValueAtTime(0.001, now);
+    g3.gain.exponentialRampToValueAtTime(0.14, now + 3.5);
+    g3.gain.linearRampToValueAtTime(0.09, now + 11);
+    osc3.connect(g3).connect(filter);
+
+    const dur = 15.5;
+    osc1.start(now);
+    osc2.start(now);
+    osc3.start(now);
+    osc1.stop(now + dur);
+    osc2.stop(now + dur);
+    osc3.stop(now + dur);
+  }
+
+  function playCelebration() {
+    if (prefersReducedMotion) return;
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.28, now);
+    master.gain.exponentialRampToValueAtTime(0.001, now + 2.6);
+    master.connect(ctx.destination);
+
+    const notes = [
+      { f: 523.25, t: 0 },
+      { f: 659.25, t: 0.08 },
+      { f: 783.99, t: 0.16 },
+      { f: 1046.5, t: 0.24 },
+      { f: 1318.51, t: 0.36 },
+      { f: 1567.98, t: 0.48 },
+    ];
+
+    notes.forEach(({ f, t }) => {
+      const o = ctx.createOscillator();
+      o.type = "sine";
+      o.frequency.setValueAtTime(f, now + t);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.001, now + t);
+      g.gain.exponentialRampToValueAtTime(0.2, now + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.35);
+      o.connect(g).connect(master);
+      o.start(now + t);
+      o.stop(now + t + 0.36);
+    });
+
+    const chordT = now + 0.55;
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+      const o = ctx.createOscillator();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(f, chordT + i * 0.02);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.001, chordT);
+      g.gain.exponentialRampToValueAtTime(0.12, chordT + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, chordT + 0.85);
+      o.connect(g).connect(master);
+      o.start(chordT);
+      o.stop(chordT + 0.9);
+    });
+
+    const noise = ctx.createBufferSource();
+    const noiseBuf = ctx.createBuffer(
+      1,
+      Math.ceil(ctx.sampleRate * 0.15),
+      ctx.sampleRate
+    );
+    const ch = noiseBuf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+    noise.buffer = noiseBuf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.setValueAtTime(1800, now);
+    bp.Q.setValueAtTime(0.9, now);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.001, now + 0.5);
+    ng.gain.exponentialRampToValueAtTime(0.08, now + 0.52);
+    ng.gain.exponentialRampToValueAtTime(0.001, now + 0.62);
+    noise.connect(bp).connect(ng).connect(master);
+    noise.start(now + 0.5);
+    noise.stop(now + 0.65);
+  }
+
+  async function tryStartSuspense() {
+    if (prefersReducedMotion || suspenseStarted) return;
+    const ok = await resumeAudioContext();
+    if (ok) playSuspense();
+  }
+
+  function attachSuspenseFallback() {
+    if (prefersReducedMotion) return;
+    suspenseFallbackHandler = (ev) => {
+      if (isRevealButtonTarget(ev.target)) return;
+      void tryStartSuspense();
+    };
+    document.addEventListener("pointerdown", suspenseFallbackHandler, true);
+  }
+
   /* ---------- Nebula background ---------- */
   function initNebula() {
     const ctx = nebulaCanvas.getContext("2d");
@@ -282,9 +463,11 @@
     });
   }
 
-  function onReveal() {
+  async function onReveal() {
     if (cta.disabled) return;
     cta.disabled = true;
+    await resumeAudioContext();
+    playCelebration();
     burstConfetti();
 
     intro.classList.add("is-hidden");
@@ -298,6 +481,9 @@
 
   initNebula();
   initParticles();
+  attachSuspenseFallback();
+  setTimeout(() => void tryStartSuspense(), 450);
+
   typeHook(() => {
     cta.disabled = false;
   });
