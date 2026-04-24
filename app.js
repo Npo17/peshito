@@ -23,6 +23,8 @@
   let audioCtxSingleton = null;
   let suspenseStarted = false;
   let suspenseFallbackHandler = null;
+  /** Gain de salida del suspenso; se atenúa de golpe al festejo para no solaparse */
+  let suspenseOutGain = null;
 
   function getAudioContext() {
     if (audioCtxSingleton) return audioCtxSingleton;
@@ -68,6 +70,11 @@
 
     const now = ctx.currentTime;
     const master = ctx.createGain();
+    suspenseOutGain = master;
+    window.setTimeout(() => {
+      if (suspenseOutGain === master) suspenseOutGain = null;
+    }, 16000);
+
     master.gain.setValueAtTime(0.001, now);
     master.gain.exponentialRampToValueAtTime(0.22, now + 2.8);
     master.gain.linearRampToValueAtTime(0.18, now + 9);
@@ -116,16 +123,44 @@
     osc3.stop(now + dur);
   }
 
+  function duckSuspenseForCelebration() {
+    const g = suspenseOutGain;
+    if (!g) return;
+    const ctx = g.context;
+    const t = ctx.currentTime;
+    try {
+      g.gain.cancelScheduledValues(t);
+    } catch (e) {
+      /* ignore */
+    }
+    const cur = Math.min(Math.max(g.gain.value, 0.0001), 0.35);
+    g.gain.setValueAtTime(cur, t);
+    g.gain.linearRampToValueAtTime(0.0001, t + 0.07);
+  }
+
   function playCelebration() {
     if (prefersReducedMotion) return;
     const ctx = getAudioContext();
     if (!ctx) return;
 
+    duckSuspenseForCelebration();
+
     const now = ctx.currentTime;
     const master = ctx.createGain();
-    master.gain.setValueAtTime(0.28, now);
-    master.gain.exponentialRampToValueAtTime(0.001, now + 2.6);
     master.connect(ctx.destination);
+
+    const holdUntil = now + 1.32;
+    master.gain.setValueAtTime(0.22, now);
+    master.gain.setValueAtTime(0.22, holdUntil);
+    master.gain.linearRampToValueAtTime(0, holdUntil + 0.28);
+
+    window.setTimeout(() => {
+      try {
+        master.disconnect();
+      } catch (e) {
+        /* ignore */
+      }
+    }, 1800);
 
     const notes = [
       { f: 523.25, t: 0 },
@@ -142,31 +177,31 @@
       o.frequency.setValueAtTime(f, now + t);
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.001, now + t);
-      g.gain.exponentialRampToValueAtTime(0.2, now + t + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.35);
+      g.gain.exponentialRampToValueAtTime(0.18, now + t + 0.02);
+      g.gain.linearRampToValueAtTime(0, now + t + 0.32);
       o.connect(g).connect(master);
       o.start(now + t);
-      o.stop(now + t + 0.36);
+      o.stop(now + t + 0.34);
     });
 
-    const chordT = now + 0.55;
+    const chordT = now + 0.52;
     [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
       const o = ctx.createOscillator();
-      o.type = "triangle";
-      o.frequency.setValueAtTime(f, chordT + i * 0.02);
+      o.type = "sine";
+      o.frequency.setValueAtTime(f, chordT + i * 0.015);
       const g = ctx.createGain();
-      g.gain.setValueAtTime(0.001, chordT);
-      g.gain.exponentialRampToValueAtTime(0.12, chordT + 0.05);
-      g.gain.exponentialRampToValueAtTime(0.001, chordT + 0.85);
+      g.gain.setValueAtTime(0, chordT);
+      g.gain.linearRampToValueAtTime(0.1, chordT + 0.04);
+      g.gain.linearRampToValueAtTime(0, chordT + 0.72);
       o.connect(g).connect(master);
       o.start(chordT);
-      o.stop(chordT + 0.9);
+      o.stop(chordT + 0.74);
     });
 
     const noise = ctx.createBufferSource();
     const noiseBuf = ctx.createBuffer(
       1,
-      Math.ceil(ctx.sampleRate * 0.15),
+      Math.ceil(ctx.sampleRate * 0.06),
       ctx.sampleRate
     );
     const ch = noiseBuf.getChannelData(0);
@@ -174,15 +209,15 @@
     noise.buffer = noiseBuf;
     const bp = ctx.createBiquadFilter();
     bp.type = "bandpass";
-    bp.frequency.setValueAtTime(1800, now);
-    bp.Q.setValueAtTime(0.9, now);
+    bp.frequency.setValueAtTime(2200, now);
+    bp.Q.setValueAtTime(0.35, now);
     const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0.001, now + 0.5);
-    ng.gain.exponentialRampToValueAtTime(0.08, now + 0.52);
-    ng.gain.exponentialRampToValueAtTime(0.001, now + 0.62);
+    ng.gain.setValueAtTime(0, now + 0.48);
+    ng.gain.linearRampToValueAtTime(0.045, now + 0.5);
+    ng.gain.linearRampToValueAtTime(0, now + 0.58);
     noise.connect(bp).connect(ng).connect(master);
-    noise.start(now + 0.5);
-    noise.stop(now + 0.65);
+    noise.start(now + 0.48);
+    noise.stop(now + 0.59);
   }
 
   async function tryStartSuspense() {
