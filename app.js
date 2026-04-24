@@ -19,131 +19,12 @@
     "(prefers-reduced-motion: reduce)"
   ).matches;
 
-  /* ---------- Audio: suspenso al entrar, festejo al botón ---------- */
-  let audioCtxSingleton = null;
-  let suspenseStarted = false;
-  let suspenseFallbackHandler = null;
-  /** Gain de salida del suspenso; se atenúa de golpe al festejo para no solaparse */
-  let suspenseOutGain = null;
-
+  /* ---------- Audio: solo ladrido al botón ---------- */
   const barkSfx = new Audio("audio/bark.mp3");
   barkSfx.preload = "auto";
 
-  function getAudioContext() {
-    if (audioCtxSingleton) return audioCtxSingleton;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    audioCtxSingleton = new AC();
-    return audioCtxSingleton;
-  }
-
-  async function resumeAudioContext() {
-    const ctx = getAudioContext();
-    if (!ctx) return false;
-    if (ctx.state === "suspended") await ctx.resume();
-    return ctx.state === "running";
-  }
-
-  function isRevealButtonTarget(el) {
-    return Boolean(
-      el && (el === cta || el.closest?.("#cta") === cta)
-    );
-  }
-
-  function detachSuspenseFallback() {
-    if (suspenseFallbackHandler) {
-      document.removeEventListener(
-        "pointerdown",
-        suspenseFallbackHandler,
-        true
-      );
-      suspenseFallbackHandler = null;
-    }
-  }
-
-  function playSuspense() {
-    if (prefersReducedMotion || suspenseStarted) return;
-    suspenseStarted = true;
-    const ctx = getAudioContext();
-    if (!ctx) {
-      suspenseStarted = false;
-      return;
-    }
-    detachSuspenseFallback();
-
-    const now = ctx.currentTime;
-    const master = ctx.createGain();
-    suspenseOutGain = master;
-    window.setTimeout(() => {
-      if (suspenseOutGain === master) suspenseOutGain = null;
-    }, 16000);
-
-    master.gain.setValueAtTime(0.001, now);
-    master.gain.exponentialRampToValueAtTime(0.22, now + 2.8);
-    master.gain.linearRampToValueAtTime(0.18, now + 9);
-    master.gain.exponentialRampToValueAtTime(0.001, now + 15.5);
-    master.connect(ctx.destination);
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(90, now);
-    filter.frequency.exponentialRampToValueAtTime(520, now + 9);
-    filter.Q.setValueAtTime(0.6, now);
-    filter.connect(master);
-
-    const osc1 = ctx.createOscillator();
-    osc1.type = "sine";
-    osc1.frequency.setValueAtTime(52, now);
-    osc1.frequency.exponentialRampToValueAtTime(78, now + 12);
-    const g1 = ctx.createGain();
-    g1.gain.setValueAtTime(0.9, now);
-    osc1.connect(g1).connect(filter);
-
-    const osc2 = ctx.createOscillator();
-    osc2.type = "sine";
-    osc2.frequency.setValueAtTime(55.3, now);
-    osc2.frequency.exponentialRampToValueAtTime(80, now + 12);
-    const g2 = ctx.createGain();
-    g2.gain.setValueAtTime(0.85, now);
-    osc2.connect(g2).connect(filter);
-
-    const osc3 = ctx.createOscillator();
-    osc3.type = "triangle";
-    osc3.frequency.setValueAtTime(78, now);
-    osc3.frequency.exponentialRampToValueAtTime(104, now + 11);
-    const g3 = ctx.createGain();
-    g3.gain.setValueAtTime(0.001, now);
-    g3.gain.exponentialRampToValueAtTime(0.14, now + 3.5);
-    g3.gain.linearRampToValueAtTime(0.09, now + 11);
-    osc3.connect(g3).connect(filter);
-
-    const dur = 15.5;
-    osc1.start(now);
-    osc2.start(now);
-    osc3.start(now);
-    osc1.stop(now + dur);
-    osc2.stop(now + dur);
-    osc3.stop(now + dur);
-  }
-
-  function duckSuspenseForCelebration() {
-    const g = suspenseOutGain;
-    if (!g) return;
-    const ctx = g.context;
-    const t = ctx.currentTime;
-    try {
-      g.gain.cancelScheduledValues(t);
-    } catch (e) {
-      /* ignore */
-    }
-    const cur = Math.min(Math.max(g.gain.value, 0.0001), 0.35);
-    g.gain.setValueAtTime(cur, t);
-    g.gain.linearRampToValueAtTime(0.0001, t + 0.07);
-  }
-
   function playCelebration() {
     if (prefersReducedMotion) return;
-    duckSuspenseForCelebration();
     try {
       barkSfx.pause();
       barkSfx.currentTime = 0;
@@ -152,21 +33,6 @@
     }
     barkSfx.volume = 0.92;
     void barkSfx.play().catch(() => {});
-  }
-
-  async function tryStartSuspense() {
-    if (prefersReducedMotion || suspenseStarted) return;
-    const ok = await resumeAudioContext();
-    if (ok) playSuspense();
-  }
-
-  function attachSuspenseFallback() {
-    if (prefersReducedMotion) return;
-    suspenseFallbackHandler = (ev) => {
-      if (isRevealButtonTarget(ev.target)) return;
-      void tryStartSuspense();
-    };
-    document.addEventListener("pointerdown", suspenseFallbackHandler, true);
   }
 
   /* ---------- Nebula background ---------- */
@@ -432,10 +298,9 @@
     });
   }
 
-  async function onReveal() {
+  function onReveal() {
     if (cta.disabled) return;
     cta.disabled = true;
-    await resumeAudioContext();
     playCelebration();
     burstConfetti();
 
@@ -450,8 +315,6 @@
 
   initNebula();
   initParticles();
-  attachSuspenseFallback();
-  setTimeout(() => void tryStartSuspense(), 450);
 
   typeHook(() => {
     cta.disabled = false;
